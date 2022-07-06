@@ -17,9 +17,9 @@
 
 #include <cugraph/algorithms.hpp>
 #include <cugraph/graph_view.hpp>
-#include <cugraph/prims/copy_v_transform_reduce_in_out_nbr.cuh>
 #include <cugraph/prims/count_if_v.cuh>
 #include <cugraph/prims/edge_partition_src_dst_property.cuh>
+#include <cugraph/prims/per_v_transform_reduce_incoming_outgoing_e.cuh>
 #include <cugraph/prims/reduce_v.cuh>
 #include <cugraph/prims/transform_reduce_v.cuh>
 #include <cugraph/prims/update_edge_partition_src_dst_property.cuh>
@@ -29,13 +29,14 @@
 
 namespace cugraph {
 namespace detail {
-template <typename GraphViewType, typename result_t>
+template <typename GraphViewType, typename ReduceOp, typename result_t>
 void normalize(raft::handle_t const& handle,
                GraphViewType const& graph_view,
                result_t* hubs,
-               raft::comms::op_t op)
+               result_t init,
+               ReduceOp reduce_op)
 {
-  auto hubs_norm = reduce_v(handle, graph_view, hubs, identity_element<result_t>(op), op);
+  auto hubs_norm = reduce_v(handle, graph_view, hubs, init, reduce_op);
   CUGRAPH_EXPECTS(hubs_norm > 0, "Norm is required to be a positive value.");
   thrust::transform(handle.get_thrust_policy(),
                     hubs,
@@ -81,7 +82,7 @@ std::tuple<result_t, size_t> hits(raft::handle_t const& handle,
   }
 
   if (has_initial_hubs_guess) {
-    detail::normalize(handle, graph_view, hubs, raft::comms::op_t::SUM);
+    detail::normalize(handle, graph_view, hubs, result_t{0.0}, reduce_op::plus<result_t>{});
   }
 
   // Property wrappers
@@ -105,7 +106,7 @@ std::tuple<result_t, size_t> hits(raft::handle_t const& handle,
   }
   for (size_t iter = 0; iter < max_iterations; ++iter) {
     // Update current destination authorities property
-    copy_v_transform_reduce_in_nbr(
+    per_v_transform_reduce_incoming_e(
       handle,
       graph_view,
       prev_src_hubs.device_view(),
@@ -117,7 +118,7 @@ std::tuple<result_t, size_t> hits(raft::handle_t const& handle,
     update_edge_partition_dst_property(handle, graph_view, authorities, curr_dst_auth);
 
     // Update current source hubs property
-    copy_v_transform_reduce_out_nbr(
+    per_v_transform_reduce_outgoing_e(
       handle,
       graph_view,
       dummy_property_t<result_t>{}.device_view(),
@@ -129,10 +130,18 @@ std::tuple<result_t, size_t> hits(raft::handle_t const& handle,
       curr_hubs);
 
     // Normalize current hub values
-    detail::normalize(handle, graph_view, curr_hubs, raft::comms::op_t::MAX);
+    detail::normalize(handle,
+                      graph_view,
+                      curr_hubs,
+                      std::numeric_limits<result_t>::lowest(),
+                      reduce_op::maximum<result_t>{});
 
     // Normalize current authority values
-    detail::normalize(handle, graph_view, authorities, raft::comms::op_t::MAX);
+    detail::normalize(handle,
+                      graph_view,
+                      authorities,
+                      std::numeric_limits<result_t>::lowest(),
+                      reduce_op::maximum<result_t>{});
 
     // Test for exit condition
     diff_sum = transform_reduce_v(
@@ -155,8 +164,8 @@ std::tuple<result_t, size_t> hits(raft::handle_t const& handle,
   }
 
   if (normalize) {
-    detail::normalize(handle, graph_view, prev_hubs, raft::comms::op_t::SUM);
-    detail::normalize(handle, graph_view, authorities, raft::comms::op_t::SUM);
+    detail::normalize(handle, graph_view, prev_hubs, result_t{0.0}, reduce_op::plus<result_t>{});
+    detail::normalize(handle, graph_view, authorities, result_t{0.0}, reduce_op::plus<result_t>{});
   }
 
   // Copy calculated hubs to in/out parameter if necessary

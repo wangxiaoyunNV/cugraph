@@ -35,11 +35,13 @@ struct cugraph_sample_result_t {
   bool experimental_{true};
   cugraph_type_erased_device_array_t* src_{nullptr};
   cugraph_type_erased_device_array_t* dst_{nullptr};
-  // FIXME: Will be deleted once experimental replaces curren
+  // FIXME: Will be deleted once experimental replaces current
   cugraph_type_erased_device_array_t* label_{nullptr};
   cugraph_type_erased_device_array_t* index_{nullptr};
-  // FIXME: Will be deleted once experimental replaces curren
+  // FIXME: Will be deleted once experimental replaces current
   cugraph_type_erased_host_array_t* count_{nullptr};
+  // FIXME: Rename to count_ once experimental replaces current
+  cugraph_type_erased_device_array_t* experimental_count_{nullptr};
 };
 
 }  // namespace c_api
@@ -202,11 +204,6 @@ struct experimental_uniform_neighbor_sampling_functor : public cugraph::c_api::a
     if constexpr (!cugraph::is_candidate<vertex_t, edge_t, weight_t>::value) {
       unsupported();
     } else {
-#if 1
-      unsupported();
-#else
-      // IMPLEMENTATION WILL GO HERE
-
       // uniform_nbr_sample expects store_transposed == false
       if constexpr (store_transposed) {
         error_code_ = cugraph::c_api::
@@ -238,14 +235,12 @@ struct experimental_uniform_neighbor_sampling_functor : public cugraph::c_api::a
         graph_view.local_vertex_partition_range_last(),
         false);
 
-      // C++ API wants an std::vector
-      std::vector<int> fan_out(fan_out_->size_);
-      std::copy_n(fan_out_->as_type<int>(), fan_out_->size_, fan_out.data());
-
-      auto&& [tmp_tuple, counts] = cugraph::uniform_nbr_sample(
-        handle_, graph_view, start.data(), start.size(), fan_out, with_replacement_);
-
-      auto&& [srcs, dsts, labels, indices] = tmp_tuple;
+      auto&& [srcs, dsts, weights, counts] = cugraph::uniform_nbr_sample(
+        handle_,
+        graph_view,
+        raft::device_span<vertex_t>(start.data(), start.size()),
+        raft::host_span<const int>(fan_out_->as_type<const int>(), fan_out_->size_),
+        with_replacement_);
 
       std::vector<vertex_t> vertex_partition_lasts = graph_view.vertex_partition_range_lasts();
 
@@ -268,9 +263,9 @@ struct experimental_uniform_neighbor_sampling_functor : public cugraph::c_api::a
         new cugraph::c_api::cugraph_type_erased_device_array_t(srcs, graph_->vertex_type_),
         new cugraph::c_api::cugraph_type_erased_device_array_t(dsts, graph_->vertex_type_),
         nullptr,
-        new cugraph::c_api::cugraph_type_erased_device_array_t(indices, graph_->edge_type_),
-        nullptr};
-#endif
+        new cugraph::c_api::cugraph_type_erased_device_array_t(weights, graph_->weight_type_),
+        nullptr,
+        new cugraph::c_api::cugraph_type_erased_device_array_t(counts, graph_->edge_type_)};
     }
   }
 };

@@ -37,7 +37,7 @@ from pylibcugraph._cugraph_c.centrality_algorithms cimport (
     cugraph_centrality_result_free,
 )
 from pylibcugraph.resource_handle cimport (
-    EXPERIMENTAL__ResourceHandle,
+    ResourceHandle,
 )
 from pylibcugraph.graphs cimport (
     _GPUGraph,
@@ -49,14 +49,14 @@ from pylibcugraph.utils cimport (
 )
 
 
-def EXPERIMENTAL__pagerank(EXPERIMENTAL__ResourceHandle resource_handle,
-                           _GPUGraph graph,
-                           precomputed_vertex_out_weight_sums,
-                           double alpha,
-                           double epsilon,
-                           size_t max_iterations,
-                           bool_t has_initial_guess,
-                           bool_t do_expensive_check):
+def pagerank(ResourceHandle resource_handle,
+            _GPUGraph graph,
+            precomputed_vertex_out_weight_sums,
+            double alpha,
+            double epsilon,
+            size_t max_iterations,
+            bool_t has_initial_guess,
+            bool_t do_expensive_check):
     """
     Find the PageRank score for every vertex in a graph by computing an
     approximation of the Pagerank eigenvector using the power method. The
@@ -121,13 +121,13 @@ def EXPERIMENTAL__pagerank(EXPERIMENTAL__ResourceHandle resource_handle,
     >>> srcs = cupy.asarray([0, 1, 2], dtype=numpy.int32)
     >>> dsts = cupy.asarray([1, 2, 3], dtype=numpy.int32)
     >>> weights = cupy.asarray([1.0, 1.0, 1.0], dtype=numpy.float32)
-    >>> resource_handle = pylibcugraph.experimental.ResourceHandle()
-    >>> graph_props = pylibcugraph.experimental.GraphProperties(
+    >>> resource_handle = pylibcugraph.ResourceHandle()
+    >>> graph_props = pylibcugraph.GraphProperties(
     ...     is_symmetric=False, is_multigraph=False)
-    >>> G = pylibcugraph.experimental.SGGraph(
+    >>> G = pylibcugraph.SGGraph(
     ...     resource_handle, graph_props, srcs, dsts, weights,
     ...     store_transposed=True, renumber=False, do_expensive_check=False)
-    >>> (vertices, pageranks) = pylibcugraph.experimental.pagerank(
+    >>> (vertices, pageranks) = pylibcugraph.pagerank(
     ...     resource_handle, G, None, alpha=0.85, epsilon=1.0e-6,
     ...     max_iterations=500, has_initial_guess=False,
     ...     do_expensive_check=False)

@@ -52,26 +52,32 @@ struct count_if_call_v_op_t {
  * thrust::count_if().
  *
  * @tparam GraphViewType Type of the passed non-owning graph object.
- * @tparam VertexValueInputIterator Type of the iterator for vertex properties.
+ * @tparam VertexValueInputIterator Type of the iterator for vertex property values.
  * @tparam VertexOp Type of the unary predicate operator.
  * @param handle RAFT handle object to encapsulate resources (e.g. CUDA stream, communicator, and
  * handles to various CUDA libraries) to run graph algorithms.
  * @param graph_view Non-owning graph object.
- * @param vertex_value_input_first Iterator pointing to the vertex properties for the first
+ * @param vertex_value_input_first Iterator pointing to the vertex property values for the first
  * (inclusive) vertex (assigned to this process in multi-GPU). `vertex_value_input_last` (exclusive)
  * is deduced as @p vertex_value_input_first + @p graph_view.local_vertex_partition_range_size().
  * @param v_op Binary operator takes vertex ID and *(@p vertex_value_input_first + i) (where i is
  * [0, @p graph_view.local_vertex_partition_range_size())) and returns true if this vertex should be
  * included in the returned count.
+ * @param do_expensive_check A flag to run expensive checks for input arguments (if set to `true`).
  * @return GraphViewType::vertex_type Number of times @p v_op returned true.
  */
 template <typename GraphViewType, typename VertexValueInputIterator, typename VertexOp>
 typename GraphViewType::vertex_type count_if_v(raft::handle_t const& handle,
                                                GraphViewType const& graph_view,
                                                VertexValueInputIterator vertex_value_input_first,
-                                               VertexOp v_op)
+                                               VertexOp v_op,
+                                               bool do_expensive_check = false)
 {
   using vertex_t = typename GraphViewType::vertex_type;
+
+  if (do_expensive_check) {
+    // currently, nothing to do
+  }
 
   auto it = thrust::make_transform_iterator(
     thrust::make_counting_iterator(vertex_t{0}),

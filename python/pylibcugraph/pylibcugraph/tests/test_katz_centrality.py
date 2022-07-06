@@ -14,15 +14,15 @@
 import pytest
 import cupy as cp
 import numpy as np
-from pylibcugraph.experimental import (ResourceHandle,
-                                       GraphProperties,
-                                       SGGraph,
-                                       katz_centrality)
-import pathlib
-import pylibcugraph
+from pylibcugraph import (ResourceHandle,
+                          GraphProperties,
+                          SGGraph,
+                          katz_centrality
+                          )
+from pylibcugraph.testing import utils
 
 
-datasets = pathlib.Path(pylibcugraph.__path__[0]).parent.parent.parent
+TOY = utils.RAPIDS_DATASET_ROOT_DIR_PATH/'toy_graph_undirected.csv'
 
 
 # =============================================================================
@@ -79,8 +79,7 @@ def _generic_katz_test(src_arr,
 def test_katz():
     num_edges = 8
     num_vertices = 6
-    graph_data = np.genfromtxt(datasets / 'datasets/toy_graph.csv',
-                               delimiter=' ')
+    graph_data = np.genfromtxt(TOY, delimiter=' ')
     src = cp.asarray(graph_data[:, 0], dtype=np.int32)
     dst = cp.asarray(graph_data[:, 1], dtype=np.int32)
     wgt = cp.asarray(graph_data[:, 2], dtype=np.float32)

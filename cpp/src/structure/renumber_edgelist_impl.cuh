@@ -20,6 +20,7 @@
 #include <cugraph/graph_functions.hpp>
 #include <cugraph/graph_view.hpp>
 #include <cugraph/utilities/device_comm.cuh>
+#include <cugraph/utilities/device_functors.cuh>
 #include <cugraph/utilities/error.hpp>
 #include <cugraph/utilities/host_scalar_comm.cuh>
 #include <cugraph/utilities/shuffle_comm.cuh>
@@ -191,7 +192,7 @@ std::tuple<rmm::device_uvector<vertex_t>, std::vector<vertex_t>> compute_renumbe
 
     if constexpr (multi_gpu) {
       sorted_local_vertices =
-        cugraph::detail::shuffle_vertices_by_gpu_id(handle, std::move(sorted_local_vertices));
+        cugraph::detail::shuffle_ext_vertices_by_gpu_id(handle, std::move(sorted_local_vertices));
       thrust::sort(
         handle.get_thrust_policy(), sorted_local_vertices.begin(), sorted_local_vertices.end());
       sorted_local_vertices.resize(thrust::distance(sorted_local_vertices.begin(),
@@ -287,10 +288,11 @@ std::tuple<rmm::device_uvector<vertex_t>, std::vector<vertex_t>> compute_renumbe
                      tmp_majors.begin());
         thrust::sort(
           rmm::exec_policy(loop_stream), tmp_majors.begin(), tmp_majors.begin() + this_chunk_size);
-        auto num_unique_majors = thrust::count_if(rmm::exec_policy(loop_stream),
-                                                  thrust::make_counting_iterator(size_t{0}),
-                                                  thrust::make_counting_iterator(this_chunk_size),
-                                                  is_first_in_run_t<vertex_t>{tmp_majors.data()});
+        auto num_unique_majors =
+          thrust::count_if(rmm::exec_policy(loop_stream),
+                           thrust::make_counting_iterator(size_t{0}),
+                           thrust::make_counting_iterator(this_chunk_size),
+                           is_first_in_run_t<vertex_t const*>{tmp_majors.data()});
         rmm::device_uvector<vertex_t> tmp_keys(num_unique_majors, loop_stream);
         rmm::device_uvector<edge_t> tmp_values(num_unique_majors, loop_stream);
         thrust::reduce_by_key(rmm::exec_policy(loop_stream),
@@ -332,10 +334,11 @@ std::tuple<rmm::device_uvector<vertex_t>, std::vector<vertex_t>> compute_renumbe
                  edgelist_majors[0] + edgelist_edge_counts[0],
                  tmp_majors.begin());
     thrust::sort(handle.get_thrust_policy(), tmp_majors.begin(), tmp_majors.end());
-    auto num_unique_majors = thrust::count_if(handle.get_thrust_policy(),
-                                              thrust::make_counting_iterator(size_t{0}),
-                                              thrust::make_counting_iterator(tmp_majors.size()),
-                                              is_first_in_run_t<vertex_t>{tmp_majors.data()});
+    auto num_unique_majors =
+      thrust::count_if(handle.get_thrust_policy(),
+                       thrust::make_counting_iterator(size_t{0}),
+                       thrust::make_counting_iterator(tmp_majors.size()),
+                       is_first_in_run_t<vertex_t const*>{tmp_majors.data()});
     rmm::device_uvector<vertex_t> tmp_keys(num_unique_majors, handle.get_stream());
     rmm::device_uvector<edge_t> tmp_values(num_unique_majors, handle.get_stream());
     thrust::reduce_by_key(handle.get_thrust_policy(),
@@ -511,7 +514,8 @@ void expensive_check_edgelist(
                col_comm_rank,
                j,
                gpu_id_key_func =
-                 detail::compute_gpu_id_from_vertex_t<vertex_t>{comm_size}] __device__(auto minor) {
+                 detail::compute_gpu_id_from_ext_vertex_t<vertex_t>{
+                   comm_size}] __device__(auto minor) {
                 return gpu_id_key_func(minor) != col_comm_rank * row_comm_size + j;
               }) == 0,
             "Invalid input argument: if edgelist_intra_partition_segment_offsets.has_value() is "
@@ -532,7 +536,7 @@ void expensive_check_edgelist(
           (*sorted_local_vertices).end(),
           [comm_rank,
            key_func =
-             detail::compute_gpu_id_from_vertex_t<vertex_t>{comm_size}] __device__(auto val) {
+             detail::compute_gpu_id_from_ext_vertex_t<vertex_t>{comm_size}] __device__(auto val) {
             return key_func(val) != comm_rank;
           }) == 0,
         "Invalid input argument: local_vertices should be pre-shuffled.");
@@ -696,14 +700,14 @@ renumber_edgelist(
 
   auto vertex_counts = host_scalar_allgather(
     comm, static_cast<vertex_t>(renumber_map_labels.size()), handle.get_stream());
-  std::vector<vertex_t> vertex_partition_offsets(comm_size + 1, 0);
+  std::vector<vertex_t> vertex_partition_range_offsets(comm_size + 1, 0);
   std::partial_sum(
-    vertex_counts.begin(), vertex_counts.end(), vertex_partition_offsets.begin() + 1);
+    vertex_counts.begin(), vertex_counts.end(), vertex_partition_range_offsets.begin() + 1);
 
   partition_t<vertex_t> partition(
-    vertex_partition_offsets, row_comm_size, col_comm_size, row_comm_rank, col_comm_rank);
+    vertex_partition_range_offsets, row_comm_size, col_comm_size, row_comm_rank, col_comm_rank);
 
-  auto number_of_vertices = vertex_partition_offsets.back();
+  auto number_of_vertices = vertex_partition_range_offsets.back();
   auto number_of_edges    = host_scalar_allreduce(
     comm,
     std::accumulate(edgelist_edge_counts.begin(), edgelist_edge_counts.end(), edge_t{0}),

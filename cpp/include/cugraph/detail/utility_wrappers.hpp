@@ -46,19 +46,6 @@ void uniform_random_fill(rmm::cuda_stream_view const& stream_view,
                          uint64_t seed);
 
 /**
- * @brief    Normalize the values in an array
- *
- * @tparam      value_t      type of the value to operate on
- *
- * @param[in]   stream_view  stream view
- * @param[out]  d_value      device array to reduce
- * @param[in]   size         number of elements in array
- *
- */
-template <typename value_t>
-void normalize(rmm::cuda_stream_view const& stream_view, value_t* d_value, size_t size);
-
-/**
  * @brief    Fill a buffer with a sequence of values
  *
  * Fills the buffer with the sequence:
@@ -121,6 +108,23 @@ vertex_t compute_maximum_vertex_id(rmm::cuda_stream_view const& stream_view,
   return compute_maximum_vertex_id(
     stream_view, d_edgelist_srcs.data(), d_edgelist_dsts.data(), d_edgelist_srcs.size());
 }
+
+/**
+ * @brief Filter zero degree vertices from this frontier
+ *
+ * @tparam vertex_t vertex type
+ * @tparam vertex_t edge type
+ * @param handle RAFT handle object to encapsulate resources (e.g. CUDA stream, communicator, and
+ * handles to various CUDA libraries) to run graph algorithms.
+ * @param d_vertices The input list of vertices
+ * @param d_out_degs The output degree of each vertex
+ * @return A tuple of device vectors the updated list of vertices and output degrees
+ */
+template <typename vertex_t, typename edge_t>
+std::tuple<rmm::device_uvector<vertex_t>, rmm::device_uvector<edge_t>> filter_degree_0_vertices(
+  raft::handle_t const& handle,
+  rmm::device_uvector<vertex_t>&& d_vertices,
+  rmm::device_uvector<edge_t>&& d_out_degs);
 
 }  // namespace detail
 }  // namespace cugraph
